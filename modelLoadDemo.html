@@ -1,0 +1,117 @@
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <title>Local 3D</title>
+    <!-- Embed latest version of Babylon.js. -->
+		  <!-- <script src="https://cdn.babylonjs.com/babylon.js"></script> -->
+      <script src="https://preview.babylonjs.com/babylon.js"></script>
+		  <!-- Embed Babylon loader scripts for .gltf and other filetypes. -->
+      
+		  <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
+      
+		  <!-- Embed pep.js for consistent cross-browser pointer events. -->
+		  <script src="https://code.jquery.com/pep/0.4.3/pep.js"></script>
+
+      <script src="https://cdn.babylonjs.com/gui/babylon.gui.min.js"></script>
+
+      <script src="https://cdn.babylonjs.com/loaders/babylon.glTFFileLoader.js"></script>
+      <script src="https://cdn.babylonjs.com/loaders/babylon.objFileLoader.js"></script>
+
+      <!-- <script src="./Babylon.js/dist/gui/babylon.gui.min.js"></script> -->
+      <!-- <script src="./Babylon.js/dist/gui/babylon.gui.js.map"></script> -->
+
+
+  </head>
+  <body>
+    <div class="container">
+      <div style="display: flex;">
+        <div>
+          <button id="start-sendrecv1">入室</button>
+          <button id="stop-sendrecv1">退室</button>
+          <button id="start-sendonly">画面共有開始</button>
+          <button id="stop-sendonly">画面共有停止</button>
+          <input type="radio" name="mic_on_off" onclick="mic_on_off_clicked()" style="width: 30px; height: 15px; position: relative; top: 2px; margin-left: 50;"><font size="5">mic on</font>
+          <input type="radio" name="mic_on_off" onclick="mic_on_off_clicked()" checked style="width: 30px; height: 15px; position: relative; top: 2px; margin-left: 20;"><font size="5">mic off</font><br>
+          <div id="result-div"></div>
+          <canvas id="renderCanvas" style="border: 0px; width: 90%; height: 90%; margin: auto; position: absolute; top: 60; bottom: 0;left: 0;right: 0; touch-action: none;"></canvas>
+        </div>  
+        <div id="stream-videos" style="display: none;">
+          
+        </div>
+      </div>
+    </div>
+
+    
+    <script src="./sora.js"></script>
+    <script type="text/javascript">
+
+    // canvas DOM 要素を取得する***********************************************
+    let canvas = document.getElementById('renderCanvas');
+    // Initialize Babylon.js variables.
+    let	sceneToRender;     
+    const createDefaultEngine = function (canvas) {
+      return new BABYLON.Engine(canvas, true, {
+        preserveDrawingBuffer: true,
+        stencil: true
+      });
+    }
+
+    const engine = createDefaultEngine(canvas);
+    var createScene = async function () {
+        // Create a scene.
+        var scene = new BABYLON.Scene(engine);
+
+        var canvas = document.getElementById('renderCanvas');
+
+        // Create a default skybox with an environment.
+        //var hdrTexture = BABYLON.CubeTexture.CreateFromPrefilteredData("textures/environment.dds", scene);
+        //var currentSkybox = scene.createDefaultSkybox(hdrTexture, true);
+
+        scene.createDefaultCameraOrLight(true, true, true);
+
+        var ball = BABYLON.Mesh.CreateSphere("sphere1", 16, 10, scene);   //UI親となる見えないオブジェクト
+        // Append glTF model to scene.
+        var robot = BABYLON.SceneLoader.ImportMeshAsync("", "./", "8751092378150355373.glb").then((result) => {
+          for(var i =0; i<result.meshes.length; i++){
+            //result.meshes[i].rotation = BABYLON.Vector3.Zero(); //babylon.js versions > 4.00
+            //result.meshes[i].rotationQuaternion = BABYLON.Quaternion.FromEulerVector(0,0,0);
+            //result.meshes[i].position = i;
+            console.log(result.meshes[i].name);
+          }
+          const root = scene.getMeshByName("__root__");
+          root.position.y = -0.5;
+          console.log("load success");
+          console.log(result.skeletons);
+          var neck = scene.getBoneByName("Neck");
+          
+          neck.rotationQuaternion.set(0,80,0);
+          console.log(neck.rotationQuaternion);
+        });
+        //robot.position.y = -1;
+        //robot.rotationQuaternion = BABYLON.Quaternion.FromEulerVector(90,0,0);
+
+
+        
+        //neck.position.y = 1;
+        return scene;
+    };
+
+    // Create scene.
+    scene = createScene();
+    scene.then(function (returnedScene) {
+      sceneToRender = returnedScene;
+    });
+    engine.runRenderLoop(function () {
+      if (sceneToRender) {
+        sceneToRender.render();
+      }
+    });
+    // Handle browser resize.
+    window.addEventListener('resize', function () {
+      engine.resize();
+    });
+ 
+
+    </script>
+  </body>
+</html>

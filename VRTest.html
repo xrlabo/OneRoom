@@ -1,0 +1,144 @@
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <title>Remote 3D</title>
+    <!-- Embed latest version of Babylon.js. -->
+		  <!-- <script src="https://cdn.babylonjs.com/babylon.js"></script> -->
+      <script src="./Babylon.js/babylon.js"></script>
+
+		  <!-- Embed Babylon loader scripts for .gltf and other filetypes. -->
+		  <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
+
+		  <!-- Embed pep.js for consistent cross-browser pointer events. -->
+		  <script src="https://code.jquery.com/pep/0.4.3/pep.js"></script>
+
+      <script src="https://cdn.babylonjs.com/gui/babylon.gui.min.js"></script>
+
+      <!-- <script src="./Babylon.js/dist/gui/babylon.gui.min.js"></script> -->
+      <!-- <script src="./Babylon.js/dist/gui/babylon.gui.js.map"></script> -->
+
+
+  </head>
+  <body>
+    <div class="container">
+      <div style="display: flex;">
+        <div>
+          <button id="start-sendrecv1">入室</button>
+          <button id="stop-sendrecv1">退室</button>
+          <button id="start-sendonly">画面共有開始</button>
+          <button id="stop-sendonly">画面共有停止</button>
+
+
+        </div>  
+        
+      </div>
+    </div>
+    <canvas id="renderCanvas" style="border: 0px; width: 99%; height: 93%; margin: auto; position: absolute; top: 60; bottom: 0;left: 0;right: 0; touch-action: none;"></canvas>
+    <script src="./sora.js"></script>
+    <script type="text/javascript">
+
+      // canvas DOM 要素を取得する***********************************************
+		  let canvas = document.getElementById('renderCanvas');
+		  // Initialize Babylon.js variables.
+		  let	sceneToRender;     
+		  const createDefaultEngine = function (canvas) {
+        return new BABYLON.Engine(canvas, true, {
+				  preserveDrawingBuffer: true,
+				  stencil: true
+			  });
+      }
+
+      const engine = createDefaultEngine(canvas);
+      //********* Create scene and create XR experience. *********************************
+      var createScene = async function () {
+            var scene = new BABYLON.Scene(engine);
+
+            var light = new BABYLON.PointLight("Omni", new BABYLON.Vector3(0, 100, 100), scene);
+            camera = new BABYLON.ArcRotateCamera("Camera", 0, 0.8, 50, new BABYLON.Vector3.Zero(), scene);
+            camera.attachControl(canvas, true);
+
+            var ground = BABYLON.Mesh.CreateGround("ground", 500, 500, 10, scene);
+
+            var box = BABYLON.Mesh.CreateBox("box", 4.0, scene);
+            box.position.y = 2;
+            box.scaling.z = 2;
+            var matBox = new BABYLON.StandardMaterial("matBox", scene);
+            matBox.diffuseColor = new BABYLON.Color3(1.0, 0.1, 0.1);
+            box.material = matBox;
+            box.isPickable = true;
+            console.log(box.position);
+
+            var box2 = BABYLON.Mesh.CreateBox("box2", 8.0, scene);
+            box2.position = new BABYLON.Vector3(-20, 4, 0);
+            var matBox2 = new BABYLON.StandardMaterial("matBox2", scene);
+            matBox2.diffuseColor = new BABYLON.Color3(0.1, 0.1, 1);
+            box2.material = matBox2;
+
+
+            //  const environment = scene.createDefaultEnvironment();
+
+            // XR
+            const xrHelper = await scene.createDefaultXRExperienceAsync({
+                floorMeshes: [ground]
+            });
+
+            let mesh;
+
+            xrHelper.input.onControllerAddedObservable.add((controller) => {
+                controller.onMotionControllerInitObservable.add((motionController) => {
+                    if (motionController.handness === 'left') {
+                        const xr_ids = motionController.getComponentIds();
+                        let triggerComponent = motionController.getComponent(xr_ids[0]);//xr-standard-trigger
+                        triggerComponent.onButtonStateChangedObservable.add(() => {
+                            if (triggerComponent.changes.pressed) {
+                                // is it pressed?
+                                if (triggerComponent.pressed) {
+                                    mesh = scene.meshUnderPointer;
+                                    //console.log(mesh && mesh.name);
+                                    if (xrHelper.pointerSelection.getMeshUnderPointer) {
+                                        mesh = xrHelper.pointerSelection.getMeshUnderPointer(controller.uniqueId);
+                                        if(mesh.name == "box"){
+                                            box.position.y += 0.1;
+                                        }
+                                        console.log(mesh);
+                                        //mesh.position.y += 0.1;
+                                    }
+                                    console.log(mesh && mesh.name);
+                                    if (mesh === ground) {
+                                        return;
+                                    }
+                                    mesh && mesh.setParent(motionController.rootMesh);
+                                } else {
+                                    mesh && mesh.setParent(null);
+                                }
+                            }
+                        });
+                    }
+                })
+            });
+
+
+            return scene;
+        }
+
+
+    // Create scene.
+    scene = createScene();
+    scene.then(function (returnedScene) {
+        sceneToRender = returnedScene;
+    });
+    engine.runRenderLoop(function () {
+	    if (sceneToRender) {
+			sceneToRender.render();
+		}
+	});
+    // Handle browser resize.
+    window.addEventListener('resize', function () {
+        engine.resize();
+    });
+
+
+
+    </script>
+  </body>
+</html>

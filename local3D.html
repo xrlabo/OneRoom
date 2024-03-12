@@ -1,0 +1,304 @@
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <title>Local 3D</title>
+    <!-- Embed latest version of Babylon.js. -->
+		  <!-- <script src="https://cdn.babylonjs.com/babylon.js"></script> -->
+      <script src="Babylon.js/babylon.js"></script>
+
+		  <!-- Embed Babylon loader scripts for .gltf and other filetypes. -->
+		  <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
+
+		  <!-- Embed pep.js for consistent cross-browser pointer events. -->
+		  <script src="https://code.jquery.com/pep/0.4.3/pep.js"></script>
+
+      <script src="https://cdn.babylonjs.com/gui/babylon.gui.min.js"></script>
+
+      <!-- <script src="./Babylon.js/dist/gui/babylon.gui.min.js"></script> -->
+      <!-- <script src="./Babylon.js/dist/gui/babylon.gui.js.map"></script> -->
+
+
+  </head>
+  <body>
+    <div class="container">
+      <div style="display: flex;">
+        <div>
+          <button id="start-sendrecv1">入室</button>
+          <button id="stop-sendrecv1">退室</button><br />
+          <button id="start-sendonly">画面共有開始</button>
+          <button id="stop-sendonly">画面共有停止</button><br />
+        </div>  
+        <div id="stream-videos" style="display: none;">
+        </div>
+      </div>
+    </div>
+    <canvas id="renderCanvas" style="border: 3px solid gray; width: 99%; height: 93%; margin: auto; position: absolute; top: 60; bottom: 0;left: 0;right: 0; touch-action: none;"></canvas>
+    <script src="sora.js"></script>
+    <script type="text/javascript">
+
+      const channelId = 'tsukubaRoom_okawa';
+      const debug = false;
+      const sora = Sora.connection("wss://sora.ikeilabsora.0am.jp/signaling", debug);
+      //const sora = Sora.connection("wss://u1.xr360d.net/signaling", debug);
+      const bundleId = Math.random().toString(36).substring(2);
+      const options = {
+        multistream: true,
+        bundleId: bundleId,
+        signalingNotify: true,
+        clientId: 'THISISLOCAL',
+        dataChannelSignaling: true,
+        dataChannels: [
+          {
+            label: "#example",
+            direction: "sendrecv",
+            compress: true,
+          },
+        ],
+      }
+      const screenOptions = {
+        multistream: true,
+        bundleId: bundleId,
+        signalingNotifyMetadata: {screen:true}
+      }
+
+      // canvas DOM 要素を取得する***********************************************
+		  let canvas = document.getElementById('renderCanvas');
+		  // Initialize Babylon.js variables.
+		  let	sceneToRender;     
+		  const createDefaultEngine = function (canvas) {
+        return new BABYLON.Engine(canvas, true, {
+				  preserveDrawingBuffer: true,
+				  stencil: true
+			  });
+      }
+
+      const engine = createDefaultEngine(canvas);
+      //Create scene and create XR experience.*********************************
+		  const createScene = async function() 
+          {
+
+        var scene = new BABYLON.Scene(engine);
+        var cameraTarget = new BABYLON.Vector3(0, 0, 0);
+			  var camera = new BABYLON.ArcRotateCamera("ArcRotateCamera", -Math.PI/2, Math.PI / 4, 5.0, cameraTarget, scene);
+			  camera.fov = 120 * (Math.PI / 180);
+        camera.attachControl(canvas, true);
+
+        var streamPlanPosZ = {};
+        let numOfClientStream = 0;
+        var streamPlane = {};
+
+        const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 1, 0), scene);
+        const box = BABYLON.MeshBuilder.CreateBox("box", {}, scene);
+        const sendrecv1 = sora.sendrecv(channelId, null, options);
+        const sendonly = sora.sendonly(channelId, null, screenOptions);
+        
+        const remoteVideoTracks = {};
+        sendrecv1.on('track', (event) => {
+          const stream = event.streams[0];
+          remoteVideoTracks[stream.id]=stream;
+          //console.log("track on");
+        });
+
+        sendrecv1.on('notify', (event) => {
+          if(event.event_type=='connection.created'){   //remoteユーザー入室時処理
+            addVideo(event);
+            event.data?.forEach(conn=>{
+              addVideo(conn);
+            });
+          }
+          else if(event.event_type=='connection.destroyed'){    ////remoteユーザー退出時処理
+            //console.log("console destroy");
+            removeVideo(event);
+          }
+        });
+
+          function addVideo(conn){
+            //console.log(conn);
+            //console.log('client ' + conn.client_id);
+            if(conn.connection_id == sendrecv1.connectionId){
+              return; //自分なら何もしない
+            }
+            const stream = remoteVideoTracks[conn.connection_id];
+            if(!stream){
+              console.error('notify', 'stream not found', conn.connection_id);
+              return;
+            }
+            if(conn.metadata?.screen){
+              //document.querySelector('#screen').srcObject = stream;
+              console.log('screen');
+            } else {
+              addStreamVideo(conn.connection_id, stream);
+            }
+          }
+
+          function removeVideo(conn){
+            const stream = remoteVideoTracks[conn.connection_id];
+            if(!stream){
+              console.warn('notify', 'stream not found', conn.connection_id);
+              return;
+            }
+            stream.getTracks().forEach(track => track.stop());
+            if(conn.metadata?.screen){
+              //document.querySelector('#screen').srcObject = null;
+              console.log('remove screen');
+            } else {
+              removeStreamVideo(conn.connection_id);
+              //delete streamPlanPosZ[numOfCliend];
+              //numOfCliend =- 1;
+            }
+            delete remoteVideoTracks[conn.connection_id];
+          }
+
+          function addStreamVideo(stream_id, stream){//stream videos on planes
+            var planeOpts = {
+			        height: 2.4, 
+			        width: 3.2, 
+			        sideOrientation: BABYLON.Mesh.DOUBLESIDE
+	          };
+
+            console.log('add stream: ' + stream_id);
+            //remoteユーザ配置
+            var column = 3;
+            streamPlane[stream_id] = BABYLON.MeshBuilder.CreatePlane("plane", planeOpts, scene);
+            streamPlane[stream_id].position.x = ((numOfClientStream + 1) % column)*4 - 4;
+            streamPlane[stream_id].position.z = 5 * Math.floor(numOfClientStream/column) +5;
+            streamPlane[stream_id].position.y = 0;
+            numOfClientStream += 1;
+          
+            const remoteVideoId = 'stream-video-' + stream_id;
+            const remoteVideos = document.querySelector('#stream-videos');
+            if (!remoteVideos.querySelector('#' + remoteVideoId)) {
+              const remoteVideo = document.createElement('video');
+              remoteVideo.id = remoteVideoId;
+              //remoteVideo.style.border = '1px solid red';
+              remoteVideo.autoplay = true;
+              remoteVideo.playsinline = true;
+              remoteVideo.controls = true;
+              //remoteVideo.width = '160';
+              //remoteVideo.height = '120';
+              remoteVideo.srcObject = stream;
+              remoteVideos.appendChild(remoteVideo);
+              streamPlane[stream_id].material = creatVideoMat(stream_id, document.getElementById(remoteVideoId), -1);
+            }
+          }
+
+          //create video material and texture
+          let creatVideoMat = (name, textureUrlOrElement, vScale) => {
+              let _vmat = new BABYLON.StandardMaterial(name, scene);
+              _vmat.emissiveColor = new BABYLON.Color3(1, 1, 1);
+              let _vtext = new BABYLON.VideoTexture(name+"_vtext", textureUrlOrElement, scene, true, true,
+                //BABYLON.VideoTexture.TRILINEAR_SAMPLINGMODE,
+                //{
+                //    autoPlay:false,
+                //    mute:false,
+                //    autoUpdateTexture:true
+                //}
+              );
+              _vtext.vScale = vScale;
+              _vmat.roughness = 1;
+              _vmat.diffuseTexture = _vtext;
+              _vmat.backFaceCulling = false;
+				    return _vmat;
+          }
+        
+        function removeStreamVideo(stream_id){
+          const remoteVideo = document.querySelector('#stream-video-' + stream_id);
+          if (remoteVideo) {
+            document.querySelector('#stream-videos').removeChild(remoteVideo);
+            //scene.removeMesh(streamPlane[stream_id]);
+            streamPlane[stream_id].dispose();
+            delete streamPlane[stream_id];
+            numOfClientStream--;
+          }
+          
+        }
+
+        document.querySelector('#start-sendrecv1').addEventListener('click', async () => {//入室ボタン押下処理
+        // sendrecv1
+        const mediaStream = await navigator.mediaDevices.getUserMedia({audio: true, video: true});
+          await sendrecv1.connect(mediaStream);
+          //document.querySelector('#sendrecv1-local-video').srcObject = mediaStream;
+          addStreamVideo(sendrecv1.connectionId, mediaStream);
+        });
+        document.querySelector('#stop-sendrecv1').addEventListener('click', async () => {//退室ボタン押下処理
+          await sendrecv1.disconnect();
+          document.querySelector('#stream-videos').srcObject = null;
+          document.querySelector('#stream-videos').innerHTML = null;
+          removeStreamVideo(sendrecv1.connectionId);
+          for (let id in streamPlane){
+            //console.log(id);
+            streamPlane[id].dispose();
+            delete streamPlane[id];
+          }
+          for (let id in remoteVideoTracks){
+            delete remoteVideoTracks[id];
+          }
+          for (let id in streamPlanPosZ){
+            delete streamPlanPosZ[id];
+          }
+    
+        });
+
+        //////////
+        document.querySelector('#start-sendonly').addEventListener('click', async () => {
+        // sendonly
+          console.log("start send movie");
+          let mediaStream = null;
+          try {
+            mediaStream = await navigator.mediaDevices.getDisplayMedia({
+              video: {
+                cursor: "always"
+              },
+              audio: false
+            });
+          } catch (ex) {
+            console.log("Error occurred", ex);
+          }
+
+          await sendonly.connect(mediaStream);
+          document.getElementById("screen").srcObject = mediaStream;
+          
+        });
+
+        document.querySelector('#stop-sendonly').addEventListener('click', async () => {
+          await sendonly.disconnect();
+          //document.querySelector('#screen').srcObject = null;
+          //document.querySelector('#screen').innerHTML = null;
+        });
+        
+        //document.querySelector('#send-message').addEventListener('click', async function() {
+        //  const value = document.querySelector('input[name=message]').value;
+        //  if (value !== "") {
+        //    sendrecv1.sendMessage('#example', new TextEncoder().encode(value));
+        //  }
+        //});
+
+        // メッセージを受信した際に on message イベントが発火する
+        sendrecv1.on('message', (event) => {
+          console.log('message: ' + new TextDecoder().decode(event.data));
+        });
+        
+        
+
+        return scene;
+
+      } 
+      // Create scene.
+		  scene = createScene();
+		  scene.then(function (returnedScene) {
+			  sceneToRender = returnedScene;
+		  });
+      engine.runRenderLoop(function () {
+			  if (sceneToRender) {
+				  sceneToRender.render();
+			  }
+		  });
+      // Handle browser resize.
+		  window.addEventListener('resize', function () {
+			  engine.resize();
+		  });
+
+
+    </script>
+  </body>
+</html>

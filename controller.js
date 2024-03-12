@@ -1,0 +1,1 @@
+import '@babylonjs/loaders/glTF';

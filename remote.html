@@ -1,0 +1,182 @@
+<html lang="ja">
+    <head>
+      <meta charset="utf-8">
+        <title>Remote</title>
+    </head>
+    <body>
+        <div class="container">
+            <div style="display: flex;">
+                <div>
+                    <button id="start-sendrecv1">入室</button>
+                    <button id="stop-sendrecv1">退室</button><br />
+                    <button id="start-sendonly">画面共有開始</button>
+                    <button id="stop-sendonly">画面共有停止</button><br />
+                    <input type="text" name="message" />
+                    <button id="send-message">sendMessage</button>
+                    <video id="sendrecv1-local-video" autoplay="" playsinline="" controls="" style="width: 320px; height: 240px; border: 1px solid black;"></video>
+                    <div id="sendrecv1-remote-videos"></div>
+                    <video id="screen" autoplay="" playsinline="" controls="" style="width: 640px; height: 480px; border: 1px solid black;"></video>
+                    
+                </div>
+                
+            </div>
+        </div>
+
+        <script src="sora.js"></script>
+        <script type="text/javascript">
+const channelId = 'tsukubaRoom_okawa';
+const debug = false;
+const sora = Sora.connection("wss://u1.xr360d.net/signaling", debug);
+const bundleId = Math.random().toString(36).substring(2);
+const options = {
+  multistream: true,
+  bundleId: bundleId,
+  signalingNotify: true,
+  clientId: 'THISISREMOTE',
+  dataChannelSignaling: true,
+  dataChannels: [
+    {
+      label: "#example",
+      direction: "sendrecv",
+      compress: true,
+    },
+  ],
+}
+const screenOptions = {
+  multistream: true,
+  bundleId: bundleId,
+  signalingNotifyMetadata: {screen:true}
+}
+const sendrecv1 = sora.sendrecv(channelId, null, options);
+const sendonly = sora.sendonly(channelId, null, screenOptions);
+
+const remoteVideoTracks = {};
+sendrecv1.on('track', (event) => {
+  const stream = event.streams[0];
+  remoteVideoTracks[stream.id]=stream;
+});
+
+sendrecv1.on('notify', (event) => {
+  if(event.event_type=='connection.created'){
+    addVideo(event);
+    event.data?.forEach(conn=>{
+      addVideo(conn);
+    });
+  }
+  else if(event.event_type=='connection.destroyed'){
+    removeVideo(event);
+  }
+});
+
+function addVideo(conn){
+  //console.log(conn);
+  //console.log('client ' + conn.client_id);
+  if(conn.connection_id == sendrecv1.connectionId || conn.client_id == 'THISISREMOTE'){
+      return;
+  }
+  const stream = remoteVideoTracks[conn.connection_id];
+  if(!stream){
+    console.error('notify', 'stream not found', conn.connection_id);
+    return;
+  }
+  if(conn.metadata?.screen){
+    document.querySelector('#screen').srcObject = stream;
+    //console.log('screen');
+  } else {
+    addRemoteVideo(conn.connection_id, stream);
+  }
+}
+
+function removeVideo(conn){
+  const stream = remoteVideoTracks[conn.connection_id];
+  if(!stream){
+    console.warn('notify', 'stream not found', conn.connection_id);
+    return;
+  }
+  stream.getTracks().forEach(track => track.stop());
+  if(conn.metadata?.screen){
+    document.querySelector('#screen').srcObject = null;
+    //console.log('remove screen');
+  } else {
+    removeRemoteVideo(conn.connection_id);
+  }
+  delete remoteVideoTracks[conn.connection_id];
+}
+
+function addRemoteVideo(stream_id, stream){
+  const remoteVideoId = 'sendrecv1-remotevideo-' + stream_id;
+  const remoteVideos = document.querySelector('#sendrecv1-remote-videos');
+  if (!remoteVideos.querySelector('#' + remoteVideoId)) {
+    const remoteVideo = document.createElement('video');
+    remoteVideo.id = remoteVideoId;
+    remoteVideo.style.border = '1px solid red';
+    remoteVideo.autoplay = true;
+    remoteVideo.playsinline = true;
+    remoteVideo.controls = true;
+    remoteVideo.width = '160';
+    remoteVideo.height = '120';
+    remoteVideo.srcObject = stream;
+    remoteVideos.appendChild(remoteVideo);
+  }
+}
+
+function removeRemoteVideo(stream_id){
+  const remoteVideo = document.querySelector('#sendrecv1-remotevideo-' + stream_id);
+  if (remoteVideo) {
+    document.querySelector('#sendrecv1-remote-videos').removeChild(remoteVideo);
+  }
+}
+
+document.querySelector('#start-sendrecv1').addEventListener('click', async () => {
+  // sendrecv1
+  const mediaStream = await navigator.mediaDevices.getUserMedia({audio: true, video: true});
+  await sendrecv1.connect(mediaStream);
+  document.querySelector('#sendrecv1-local-video').srcObject = mediaStream;
+});
+document.querySelector('#stop-sendrecv1').addEventListener('click', async () => {
+  await sendrecv1.disconnect();
+  document.querySelector('#sendrecv1-local-video').srcObject = null;
+  document.querySelector('#sendrecv1-remote-videos').innerHTML = null;
+});
+
+//////////
+document.querySelector('#start-sendonly').addEventListener('click', async () => {
+  // sendonly
+  let mediaStream = null;
+    try {
+        mediaStream = await navigator.mediaDevices.getDisplayMedia({
+            video: {
+                cursor: "always"
+            },
+            audio: false
+        });
+    } catch (ex) {
+        console.log("Error occurred", ex);
+    }
+
+  //const mediaStream = await navigator.mediaDevices.getUserMedia({audio: true, video: true});
+  await sendonly.connect(mediaStream);
+  //document.querySelector('#sceen').srcObject = mediaStream;
+  document.getElementById("screen").srcObject = mediaStream;
+});
+document.querySelector('#stop-sendonly').addEventListener('click', async () => {
+  await sendonly.disconnect();
+  document.querySelector('#screen').srcObject = null;
+  document.querySelector('#screen').innerHTML = null;
+});
+////////////
+
+document.querySelector('#send-message').addEventListener('click', async function() {
+  const value = document.querySelector('input[name=message]').value;
+  if (value !== "") {
+    sendrecv1.sendMessage('#example', new TextEncoder().encode(value));
+  }
+});
+
+sendrecv1.on('message', (event) => {
+  console.log('message: ' + new TextDecoder().decode(event.data));
+});
+
+    </script>
+  </body>
+</html>

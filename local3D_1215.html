@@ -1,0 +1,840 @@
+<html lang="ja">
+  <head>
+    <meta charset="utf-8">
+    <title>Local 3D</title>
+    <!-- Embed latest version of Babylon.js. -->
+		  <!-- <script src="https://cdn.babylonjs.com/babylon.js"></script> -->
+      <script src="https://preview.babylonjs.com/babylon.js"></script>
+
+		  <!-- Embed Babylon loader scripts for .gltf and other filetypes. -->
+		  <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
+
+		  <!-- Embed pep.js for consistent cross-browser pointer events. -->
+		  <script src="https://code.jquery.com/pep/0.4.3/pep.js"></script>
+
+      <script src="https://cdn.babylonjs.com/gui/babylon.gui.min.js"></script>
+
+      <script src="https://cdn.babylonjs.com/loaders/babylon.glTFFileLoader.js"></script>
+      <script src="https://cdn.babylonjs.com/loaders/babylon.objFileLoader.js"></script>
+
+      <!-- <script src="./Babylon.js/dist/gui/babylon.gui.min.js"></script> -->
+      <!-- <script src="./Babylon.js/dist/gui/babylon.gui.js.map"></script> -->
+
+
+  </head>
+  <body>
+    <div class="container">
+      <div style="display: flex;">
+        <div>
+          <button id="start-sendrecv1">入室</button>
+          <button id="stop-sendrecv1">退室</button>
+          <button id="start-sendonly">画面共有開始</button>
+          <button id="stop-sendonly">画面共有停止</button>
+          <input type="radio" name="mic_on_off" onclick="mic_on_off_clicked()" style="width: 30px; height: 15px; position: relative; top: 2px; margin-left: 50;"><font size="5">mic on</font>
+          <input type="radio" name="mic_on_off" onclick="mic_on_off_clicked()" checked style="width: 30px; height: 15px; position: relative; top: 2px; margin-left: 20;"><font size="5">mic off</font><br>
+          <div id="result-div"></div>
+          <canvas id="renderCanvas" style="border: 0px; width: 100%; height: 98%; margin: auto; position: absolute; top: 60; bottom: 0;left: 0;right: 0; touch-action: none;"></canvas>
+        </div>  
+        <div id="stream-videos" style="display: none;">
+          
+        </div>
+      </div>
+    </div>
+    <script src="./node_modules/@theopenweb/get-user-media-mock/index.js"></script>
+    <script src="sora.js"></script>
+    <script type="text/javascript">
+   
+      //DEEPLのAPI設定
+      const DEEPL_API_KEY = '360a97e7-047b-922d-aee1-72bdbe9e58be:fx';
+      const DEEPL_API_URL = 'https://api-free.deepl.com/v2/translate';
+
+      const channelId = 'tsukubaRoom_okawa';
+      const debug = false;
+      //const sora = Sora.connection("wss://sora.ikeilabsora.0am.jp/signaling", debug);
+      const sora = Sora.connection("wss://u1.xr360d.net/signaling", debug);
+      const bundleId = Math.random().toString(36).substring(2);
+      const options = {
+        multistream: true,
+        bundleId: bundleId,
+        signalingNotify: true,
+        clientId: 'THISISLOCAL',
+        dataChannelSignaling: true,
+        dataChannels: [
+          {
+            label: "#example",
+            direction: "sendrecv",
+            compress: true,
+          },
+        ],
+      }
+      const screenOptions = {
+        multistream: true,
+        bundleId: bundleId,
+        signalingNotifyMetadata: {screen:true}
+      }
+
+      var voiceText = ""; //音声入力から得たテキスト
+      var transText = ""; //翻訳後のテキスト
+
+      //xxxxxxxxxxx canvas DOM xxxxxxxxxxxxxxxxxxxxxxxxxxx
+		  let canvas = document.getElementById('renderCanvas');
+		  // Initialize Babylon.js variables.
+		  let	sceneToRender;     
+		  const createDefaultEngine = function (canvas) {
+        return new BABYLON.Engine(canvas, true, {
+				  preserveDrawingBuffer: true,
+				  stencil: true
+			  });
+      }
+      let localStream;
+      const engine = createDefaultEngine(canvas);
+      //xxxxxxxxxxxxxxxxx  Create scene and create XR experience. xxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+		  const createScene = async function() 
+      {
+        var canvas = document.getElementById('renderCanvas');
+
+ 
+
+        //xxxxxxxx CAMERA xxxxxxxxxxxxxxxxxxxx
+        var scene = new BABYLON.Scene(engine);
+
+        // xxxxxx 翻訳テキスト表示 xxxxxxx
+	      var mat = new BABYLON.StandardMaterial("mat", scene);
+	      mat.alpha = 0.0;
+        var transTextSphere = BABYLON.Mesh.CreateSphere("TransTextSphere", 16, 100, scene);   //UI親となる見えないオブジェクト
+        transTextSphere.position.z  = -450;   //親オブジェクトの位置を変更することでテキストの位置も変更可能   boxが-200にいるのでカメラとその間の値を設定
+        transTextSphere.material = mat;
+        const advancedTexture = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI("VoiceUI");
+        var rectangle = new BABYLON.GUI.Rectangle();
+        //rectangle.background = "gray";
+        //rectangle.color = "black";
+        rectangle.thickness = 0;
+        rectangle.alpha = 1;
+        rectangle.width = "600px";
+        rectangle.height = "100px";
+        rectangle.top = "35%";
+        advancedTexture.addControl(rectangle);
+
+        var label = new BABYLON.GUI.TextBlock();
+        label.text = transText;
+        label.text = "test";
+        label.color = "white";
+        label.resizeToFit = true;
+        label.textWrapping= true;
+
+        rectangle.linkWithMesh(transTextSphere);
+        rectangle.addControl(label);
+
+        const logTexture = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI("LogUI");
+
+        var log_rectangle = new BABYLON.GUI.Rectangle();
+        //rectangle.background = "gray";
+        //rectangle.color = "black";
+        log_rectangle.top = 100;
+        log_rectangle.thickness = 0;
+        log_rectangle.alpha = 1;
+        log_rectangle.width = "600px";
+        log_rectangle.height = "100px";
+        log_rectangle.top = "35%";
+        logTexture.addControl(log_rectangle);
+
+        var logText = new BABYLON.GUI.TextBlock();
+        logText.text = transText;
+        logText.text = "log";
+        logText.color = "white";
+        logText.resizeToFit = true;
+        logText.textWrapping= true;
+
+        log_rectangle.addControl(logText);
+
+        let numOfCliend = 0;  
+        // xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+        /*
+        var cameraTarget = new BABYLON.Vector3(0, 0, 0);
+			  var camera = new BABYLON.ArcRotateCamera("ArcRotateCamera", -Math.PI/2, Math.PI / 4, 5.0, cameraTarget, scene);
+			  camera.fov = 120 * (Math.PI / 180);
+        //camera.attachControl(canvas, true);
+        */
+        
+        var cameraTarget = new BABYLON.Vector3(0, 0, 0);
+        var cam_alpha = -Math.PI/2;
+        var cam_beta = Math.PI / 2;
+        //var cam_fov = 70 * (Math.PI / 180); 
+			  var camera = new BABYLON.ArcRotateCamera("ArcRotateCamera", cam_alpha, cam_beta, 500.0, cameraTarget, scene);
+			  //var camera = new BABYLON.ArcRotateCamera("ArcRotateCamera", -Math.PI/2, Math.PI / 2, 500.0, cameraTarget, scene);
+        camera.mode = BABYLON.Camera.ORTHOGRAPHIC_CAMERA; //並行投影になっているので注意
+        camera.orthoLeft = -canvas.width / 2;
+        camera.orthoRight = canvas.width / 2;
+        camera.orthoBottom = canvas.height / 2;
+        camera.orthoTop = -canvas.height / 2;
+			  //camera.fov = 100 * (Math.PI / 180);
+        //camera.attachControl(canvas, true);
+        
+        var light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(0, 500, 0), scene);
+        light.intensity = 0.7;
+
+
+
+
+
+        //xxxxxxx Capture_Equirectangular_Panorama xxxxxx
+        var sh = BABYLON.Effect.ShadersStore;
+        // vertex
+        sh['customVertexShader'] = `
+            precision highp float;
+
+            // Attributes
+            attribute vec3 position;
+            attribute vec3 normal;
+            attribute vec2 uv;
+
+            // Uniforms
+            uniform mat4 worldViewProjection;
+            uniform vec3 cameraPos;
+
+            // Varying
+            varying vec2 vUv;
+            void main() {
+              vec4 p = vec4( position, 1. );
+              vUv = vec2( 1.- uv.x, uv.y );
+              gl_Position = worldViewProjection * p;
+            }
+        `;
+        // fragment
+        sh['customFragmentShader'] = `
+            precision mediump float;
+
+            uniform mat4 worldView;
+            in vec3 reflectedVector;
+            varying vec4 vPosition;
+            varying vec3 vNormal;
+            uniform samplerCube cubeMap;
+            uniform sampler2D textureSampler;
+            uniform sampler2D refSampler;
+
+            varying vec2 vUv;
+
+            #define M_PI 3.1415926535897932384626433832795
+
+            void main()  {
+              vec2 uv = vUv;
+              float longitude = uv.x * 2. * M_PI - M_PI + M_PI / 2.;
+              float latitude = uv.y * M_PI;
+
+              vec3 dir = vec3(
+                  - sin( longitude ) * sin( latitude ),
+                  cos( latitude ),
+                  - cos( longitude ) * sin( latitude )
+              );
+              normalize( dir );
+              gl_FragColor = textureCube( cubeMap, dir );
+            }
+        `;
+
+        var shaderMaterial = new BABYLON.ShaderMaterial("shaderMaterial", scene, {
+            vertex: "custom",
+            fragment: "custom"
+          },
+          {
+            // in order to enable alpha
+            needAlphaBlending: true,
+
+            // babylonjs default
+            attributes: ["position", "normal", "uv"],
+            uniforms: ["cameraPos", "refSampler", "world", "worldView", "worldViewProjection", "view", "projection"],
+            samplers: ["cubeMap"]
+          }
+        );
+        
+        var test_sphere = BABYLON.Mesh.CreateSphere("test_sphere", 16, 5, scene);
+        test_sphere.setPivotMatrix(BABYLON.Matrix.Translation(30, 0, 0), false);
+        console.log(test_sphere);
+
+        
+        
+        var box = BABYLON.Mesh.CreateBox("box", 1, scene);// plan to show in small displays 3 upper (3x3 display)
+        var box2 = BABYLON.Mesh.CreateBox("box", 1, scene);// plan to show in small displays 3 middle
+        var a = BABYLON.Mesh.CreateBox("box", 0.00001, scene);
+        var material = new BABYLON.StandardMaterial("satelliteMat", scene);
+        var probe = new BABYLON.ReflectionProbe("satelliteProbe" , 2*512, scene);
+
+        material.reflectionTexture = probe.cubeTexture;
+
+        material.reflectionFresnelParameters = new BABYLON.FresnelParameters();
+        //material.reflectionFresnelParameters.bias = 0.02;
+        a.material = material;
+        //probe.attachToMesh(a);
+
+        shaderMaterial.setTexture("cubeMap", probe.cubeTexture);
+        probe.refreshRate = BABYLON.RenderTargetTexture.REFRESHRATE_RENDER_ONEVERYFRAME;//render reflection prope on very frame
+        box.material = shaderMaterial;
+        box.rotation.x = -0.6;
+        box.scaling.x = 2 * canvas.width;
+        box.scaling.y = 1.2*canvas.width;
+        box.position.z = -200;
+        box.position.y = -canvas.height / 2.7;
+        box.position.x = -canvas.width / 2;
+
+        box2.material = shaderMaterial;
+        box2.rotation.x = 0.6;
+        box2.scaling.x = 2 * canvas.width;
+        box2.scaling.y = 1.2*canvas.width;//
+        box2.position.z = -200;
+        box2.position.y = canvas.height / 3;
+        box2.position.x = canvas.width / 2;
+
+        probe.renderList.push(test_sphere);
+
+
+        /*var meshes = {};
+        var robot = BABYLON.SceneLoader.ImportMeshAsync("", "./", "8751092378150355373.glb",scene,).then((result) => {
+          console.log("load success");
+          for(var i = 0;i<result.meshes.length;i++){
+            var mesh = result.meshes[i]
+            mesh.setPivotMatrix(BABYLON.Matrix.Translation(1, 0, 0), false);
+            probe.renderList.push(mesh);
+            mesh.position.y = -5;
+            mesh.rotation.y = 30;
+            mesh.scaling.x = 10;
+            mesh.scaling.y = 10;
+            mesh.scaling.z = 10;
+          }
+
+          for(var i = 0;i<result.transformNodes.length;i++){
+            var node = result.transformNodes[i];
+          }
+          var hips = scene.getTransformNodeByName("Hips");
+          hips.rotate(new BABYLON.Vector3(0,1,0),Math.PI/2,BABYLON.Space.Local);
+        });
+        */
+
+        var streamAvaterMeshes = {};
+
+        async function loadAvater(conn) {
+          try {
+            if(conn.connection_id == sendrecv1.connectionId){
+              return;
+            }
+            
+            var result = await BABYLON.SceneLoader.ImportMeshAsync("", "./", "8751092378150355373.glb", scene);
+            //console.log("load success"+",id:"+conn.connection_id);
+            streamAvaterMeshes[conn.connection_id] = result.meshes;
+            //console.log(streamAvaterMeshes[conn.connection_id].length);
+            for(var i = 0;i<result.meshes.length;i++){
+              var mesh = result.meshes[i];
+              mesh.setPivotMatrix(BABYLON.Matrix.Translation(1, 0, 0), false);
+              probe.renderList.push(mesh);
+              mesh.position.y = -5;
+              mesh.rotation.y = 30;
+              mesh.scaling.x = 10;
+              mesh.scaling.y = 10;
+              mesh.scaling.z = 10;
+            }
+  
+            for(var i = 0;i<result.transformNodes.length;i++){
+              var node = result.transformNodes[i];
+              if(node.name == "Hips"){
+                node.rotate(new BABYLON.Vector3(0,1,0),Math.PI/2,BABYLON.Space.Local);
+              }
+            }
+            
+
+
+          } catch (error) {
+            console.error("Error loading meshes", error);
+          }
+        }
+
+        function removeAvater(conn){
+          if(!streamAvaterMeshes[conn.connection_id]){
+              console.warn('notify', 'meshes not found', conn.connection_id);
+              return;
+          }
+          streamAvaterMeshes[conn.connection_id].forEach(mesh=>{
+            mesh.dispose();
+          });
+          delete streamAvaterMeshes[conn.connection_id];
+        }
+
+
+        //pointer
+        var pointerDragBehavior = new BABYLON.PointerDragBehavior({dragPlaneNormal: new BABYLON.Vector3(0,0,1)});
+        transTextSphere.addBehavior(pointerDragBehavior);
+        
+        engine.runRenderLoop(function () {//loop to add mesh to probe and show on the box
+          if (scene) {
+            test_sphere.rotation.y += 0.01;
+            shaderMaterial.setVector3("cameraPos", camera.position);
+            shaderMaterial.setTexture("cubeMap", probe.cubeTexture);//refresh shadermaterial
+            //box.material = shaderMaterial;
+            //box2.material = shaderMaterial;
+          }
+        });
+
+        
+        //xxxxxxxx stream variables xxxxxxxxxxxxxx
+        var streamPlanePosition = {};
+        var streamPlane = {};
+        const remoteVideoTracks = {};
+        var screenDist = 10.0;
+        var screenAlpha = 0.0;
+        var screenRadio = 1.0;
+        var screenHeightRadio = 1.0;
+        var screenHeight = 5.0;
+        var screenYrotate = 0.0;
+        var remoteCameraRotY = {};
+
+        //xxxxxxxxXXX SORA XXXXXXXXXXXXXXXXX
+        const sendrecv1 = sora.sendrecv(channelId, null, options);
+        const sendonly = sora.sendonly(channelId, null, screenOptions);
+                
+        sendrecv1.on('track', (event) => {
+          const stream = event.streams[0];
+          remoteVideoTracks[stream.id]=stream;
+        });
+
+        sendrecv1.on('notify', (event) => {
+          if(event.event_type=='connection.created'){
+            addVideo(event);
+            loadAvater(event);
+            event.data?.forEach(conn=>{
+              addVideo(conn);
+            });
+          }
+          else if(event.event_type=='connection.destroyed'){
+            removeAvater(event);
+            removeVideo(event);
+            
+          }
+        });
+
+          function addVideo(conn){
+            //console.log(conn);
+            //console.log('client ' + conn.connection_id);
+            if(conn.connection_id == sendrecv1.connectionId){
+              return;
+            }
+            const stream = remoteVideoTracks[conn.connection_id];
+            if(!stream){
+              console.error('notify', 'stream not found', conn.connection_id);
+              return;
+            }
+            if(conn.metadata?.screen){
+              //addStreamVideo(conn.connection_id, stream, screenShare = 'screen');
+            } else {
+              addStreamVideo(conn.connection_id, stream);
+            }
+          }
+
+          function removeVideo(conn){
+            const stream = remoteVideoTracks[conn.connection_id];
+            if(!stream){
+              console.warn('notify', 'stream not found', conn.connection_id);
+              return;
+            }
+            stream.getTracks().forEach(track => track.stop());
+            if(conn.metadata?.screen){
+              removeStreamVideo(conn.connection_id + 'screen');
+            } else {
+              removeStreamVideo(conn.connection_id);
+            }
+            delete remoteVideoTracks[conn.connection_id];
+          }
+
+          function addStreamVideo(stream_id_, stream, _width=320, _height = 240, screenShare = ''){//stream videos on planes
+            var planeOpts = {
+			        height: _height/20.0, 
+			        width: _width/20.0, 
+			        sideOrientation: BABYLON.Mesh.DOUBLESIDE
+	          };
+
+            //xxxxxxxxxxxxx
+            numOfCliend += 1; 
+            //xxxxxxxxxxxxx
+
+            var stream_id = stream_id_ + screenShare;
+            const remoteVideoId = 'stream-video-' + stream_id;
+            if(screenShare == ''){
+              streamPlane[stream_id] = BABYLON.MeshBuilder.CreatePlane("plane", planeOpts, scene);
+              streamPlane[stream_id].setPivotMatrix(BABYLON.Matrix.Translation(0, 0, -20), false);
+
+            }
+            else{
+              streamPlane[stream_id] = BABYLON.MeshBuilder.CreatePlane("plane", {height:24, width:32}, scene);
+              streamPlane[stream_id].position = new BABYLON.Vector3(0, 0, -210);
+            }
+            const remoteVideos = document.querySelector('#stream-videos');
+            if (!remoteVideos.querySelector('#' + remoteVideoId)) {
+              const remoteVideo = document.createElement('video');
+              remoteVideo.id = remoteVideoId;
+              remoteVideo.autoplay = true;
+              remoteVideo.playsinline = true;
+              remoteVideo.controls = true;
+              remoteVideo.width = _width;
+              remoteVideo.height = _height;
+              remoteVideo.srcObject = stream;
+              remoteVideos.appendChild(remoteVideo);
+              streamPlane[stream_id].material = creatVideoMat(stream_id, document.getElementById(remoteVideoId), -1);
+              streamPlane[stream_id].material.alpha = 1.0;//透明度
+              if(screenShare == ''){
+                probe.renderList.push(streamPlane[stream_id]);// how to delete????
+              }
+            }
+          }
+
+          //create video material and texture
+          let creatVideoMat = (name, textureUrlOrElement, vScale) => {
+              let _vmat = new BABYLON.StandardMaterial(name, scene);
+              _vmat.emissiveColor = new BABYLON.Color3(1, 1, 1);
+              let _vtext = new BABYLON.VideoTexture(name+"_vtext", textureUrlOrElement, scene, true, true,
+                //BABYLON.VideoTexture.TRILINEAR_SAMPLINGMODE,
+                //{
+                //    autoPlay:false,
+                //    mute:false,
+                //    autoUpdateTexture:true
+                //}
+              );
+              _vtext.vScale = vScale;
+              _vmat.roughness = 1;
+              _vmat.diffuseTexture = _vtext;
+              _vmat.backFaceCulling = false;
+				    return _vmat;
+          }
+        
+        function removeStreamVideo(stream_id){
+          const remoteVideo = document.querySelector('#stream-video-' + stream_id);
+          console.log(remoteVideo+"remoteVideo");
+          if (remoteVideo) {
+            document.querySelector('#stream-videos').removeChild(remoteVideo);
+            //scene.removeMesh(streamPlane[stream_id]);
+            streamPlane[stream_id].dispose();
+            delete streamPlane[stream_id];
+            delete streamPlanePosition[stream_id];
+            //xxxxxxxxxxxxx
+            numOfCliend -=1;
+            //xxxxxxxxxxxxx
+          }
+          
+        }
+
+        document.querySelector('#start-sendrecv1').addEventListener('click', async () => {//入室
+          
+          //xxxxxx 音声認識開始 xxxxxxx
+          recognition.start();
+        
+          // sendrecv1
+          localStream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: false, noiseSuppression: true}, video: true});
+          localStream.getAudioTracks()[0].enabled = false;
+          await sendrecv1.connect(localStream);
+          
+        });
+        document.querySelector('#stop-sendrecv1').addEventListener('click', async () => {//退室
+          await sendrecv1.disconnect();
+          document.querySelector('#stream-videos').srcObject = null;
+          document.querySelector('#stream-videos').innerHTML = null;
+          removeStreamVideo(sendrecv1.connectionId);
+          for (let id in streamPlane){
+            //console.log(id);
+            streamPlane[id].dispose();
+            delete streamPlane[id];
+          }
+          for (let id in remoteVideoTracks){
+            delete remoteVideoTracks[id];
+          }
+          for (let id in streamPlanePosition){
+            delete streamPlanePosition[id];
+          }    
+        });
+
+        //////////
+        document.querySelector('#start-sendonly').addEventListener('click', async () => {//画面共有
+        // sendonly
+          let mediaStream = null;
+          try {
+            mediaStream = await navigator.mediaDevices.getDisplayMedia({
+              video: {
+                cursor: "always"
+              },
+              audio: false
+            });
+          } catch (ex) {
+            console.log("Error occurred", ex);
+          }
+          await sendonly.connect(mediaStream);
+        });
+
+        document.querySelector('#stop-sendonly').addEventListener('click', async () => {//画面共有の修了
+          
+          //xxxxxx 音声認識終了 xxxxxx
+          recognition.stop();
+          //xxxxxxxxxxxxxxxxxxxxxxxxx
+          
+          await sendonly.disconnect();
+        });
+        
+        var clientIsVR = {};
+        //**** RECEIVE MESSAGE ****
+        sendrecv1.on('message', (event) => {
+          //console.log("message received");
+          var getData = new TextDecoder().decode(event.data).split(',');
+          console.log(getData);
+          //console.log('id: ' + getData[0]);
+          //var ang = getData[1] + 1.57;
+          //console.log('alph: ' + getData[1]);
+          //console.log('ang: ' + ang);
+          /*
+          if(streamAvaterMeshes[getData[0]]!=null){   //アバターロードが非同期処理のため、Nullチェック
+            
+          }
+          */
+          if(streamPlane[getData[0]]!=null){
+            streamPlane[getData[0]].rotation.y = getData[1];// + Math.PI/2;
+          }
+          
+          remoteCameraRotY[getData[0]] = getData[1];
+          clientIsVR[getData[0]] = getData[2];
+        });
+
+        //**** ANIMATION ****
+        scene.registerBeforeRender(function () {//animation
+        	  /* ここでアバターのアニメーション更新を行う*/
+          
+            for (let key in remoteCameraRotY) {
+              //console.log('key:' + key + ' value:' + remoteCameraRotY[key]);
+              
+              if(streamAvaterMeshes[key]!=null){
+                
+                if(clientIsVR[key]=="notXR"){
+                  for(var i = 0;i<streamAvaterMeshes[key].length;i++){
+                    streamAvaterMeshes[key][i].isVisible = false;
+                    if(streamPlane[key]!=null){
+                      streamPlane[key].isVisible = true;
+                    }
+                    
+                  }
+                }
+                else{
+                  //console.log("vr");
+                  for(var i = 0;i<streamAvaterMeshes[key].length;i++){
+                    streamAvaterMeshes[key][i].isVisible = true;
+                    if(streamPlane[key]!=null){
+                      streamPlane[key].isVisible = false;
+                    }
+                  }
+                }
+
+                for(var i = 0;i<streamAvaterMeshes[key].length;i++){
+                    streamAvaterMeshes[key][i].rotation.y = remoteCameraRotY[key] - Math.PI/2;
+                }
+              }
+            }
+            
+				});
+
+        scene.onBeforeRenderObservable.add(() => { // Runs every frame
+          //console.log(cameraRotation);
+          label.text = "翻訳結果："+transText; //ローカルの翻訳字幕に反映
+          logText.text = "音声認識結果："+voiceText;
+          //label.text = "test";
+          //console.log(transText);
+          
+          var txt = transText //翻訳結果をリモートに送信
+          var value = 'subtitles' + ',' + txt;
+          //console.log(value);
+          try{
+            sendrecv1.sendMessage('#example', new TextEncoder().encode(value));
+              
+          }catch(error){
+
+          }
+          
+        });
+
+
+        //**** KEYBOARD ****
+        scene.onKeyboardObservable.add((kbInfo) => {
+		      switch (kbInfo.type) {
+                case BABYLON.KeyboardEventTypes.KEYDOWN:
+              if(kbInfo.event.key == '+'){
+                screenDist += 0.2; 
+              }
+              else if(kbInfo.event.key == '-'){
+                screenDist -= 0.2;
+                if(screenDist < 1.0) screenDist = 1.0;
+              }
+              else if(kbInfo.event.key == '1'){
+                screenAlpha += 0.05;
+              }
+              else if(kbInfo.event.key == '3'){
+                screenAlpha -= 0.05;
+              }
+              else if(kbInfo.event.key == '4'){
+                screenHeight += 0.1;
+              }
+              else if(kbInfo.event.key == '6'){
+                screenHeight -= 0.1;
+              }
+              else if(kbInfo.event.key == '7'){
+                screenYrotate += 0.05;
+              }
+              else if(kbInfo.event.key == '9'){
+                screenYrotate -= 0.05;
+              }
+              else if(kbInfo.event.key == '*'){//screen radio
+                screenRadio += 0.005;
+              }
+              else if(kbInfo.event.key == '/'){
+                screenRadio -= 0.005;
+                if(screenRadio < 0.005){
+                  screenRadio = 0.005;
+                }
+              }
+              else if(kbInfo.event.key == '8'){//screen radio
+                screenHeightRadio += 0.005;
+              }
+              else if(kbInfo.event.key == '5'){
+                screenHeightRadio -= 0.005;
+                if(screenHeightRadio < 0.005){
+                  screenHeightRadio = 0.005;
+                }
+              }
+
+              var x_ = screenDist*Math.sin(screenAlpha);
+              var z_ = screenDist*Math.cos(screenAlpha);
+              var yRot_ = screenAlpha + screenYrotate;
+
+              var txt = "";
+              if(numOfCliend >= 2){ //リモート接続を待たないとsendMessageが失敗するっぽい？
+                txt = transText //翻訳結果をリモートに送信
+              }
+              var value = 'screen,' + x_ + ',' + screenHeight + ',' + z_ + ',' + yRot_ + ',' + screenRadio + ',' + screenHeightRadio;
+              console.log(value);
+
+              try{
+                sendrecv1.sendMessage('#example', new TextEncoder().encode(value));
+                  
+              }catch(error){
+
+              }
+              break;
+
+			      case BABYLON.KeyboardEventTypes.KEYUP:
+				      if(kbInfo.event.key == 'r'){
+
+              }
+              break;
+
+            
+		      }
+	      })
+
+         // Handle browser resize.
+		    window.addEventListener('resize', function () {
+			    engine.resize();
+          camera.orthoLeft = -canvas.width / 2;
+          camera.orthoRight = canvas.width / 2;
+          camera.orthoBottom = canvas.height / 2;
+          camera.orthoTop = -canvas.height / 2;
+          
+          box.scaling.x = 2 * canvas.width;
+          box.scaling.y = 1.2*canvas.width;
+          box.position.y = -canvas.height / 2.7;
+          box.position.x = -canvas.width / 2;
+
+          box2.scaling.x = 2 * canvas.width;
+          box2.scaling.y = 1.2*canvas.width;
+          box2.position.y = canvas.height / 3;
+          box2.position.x = canvas.width / 2;
+
+          //console.log('canvas W:' + canvas.width + ', canvas H:' + canvas.height);
+
+		    });
+      
+        return scene;
+      } 
+      // Create scene.
+		  scene = createScene();
+		  scene.then(function (returnedScene) {
+			  sceneToRender = returnedScene;
+		  });
+      engine.runRenderLoop(function () {
+			  if (sceneToRender) {
+				  sceneToRender.render();
+			  }
+		  });
+      function mic_on_off_clicked() {
+        if (document.getElementsByName('mic_on_off')[0].checked) {
+          localStream.getAudioTracks()[0].enabled = true;
+        }
+        else {
+          localStream.getAudioTracks()[0].enabled = false;
+        }
+      }
+
+      function output(intext) {
+        console.log("API呼び出し開始");
+        var s_time = new Date();
+        //console.log(s_time);
+        //const entext = document.getElementById("entext").value;   //ここに翻訳したいテキストを指定
+
+        let content = encodeURI('auth_key=' + DEEPL_API_KEY + '&text=' + intext + '&source_lang=JA&target_lang=EN');
+        let url = DEEPL_API_URL + '?' + content;
+
+        
+
+        
+        fetch(url)
+          .then(function(response) {
+              if (response.ok) {
+                  return response.json();
+              } else {
+                  throw new Error("Could not reach the API: " + response.statusText);
+              }
+          }).then(function(data) {
+              //document.getElementById("entext").value = data["translations"][0]["text"];
+              transText = data["translations"][0]["text"];
+              console.log(transText);
+              var e_time = new Date();
+              var diff = e_time.getTime() - s_time.getTime();
+              console.log("経過時間(ミリ秒):", diff);
+          }).catch(function(error) {
+              //document.getElementById("jatext").value = error.message;
+          });
+          
+      };
+
+      const resultDiv = document.querySelector('#result-div');
+
+      SpeechRecognition = webkitSpeechRecognition || SpeechRecognition;
+      let recognition = new SpeechRecognition();
+
+      recognition.lang = 'ja-JP';
+      recognition.interimResults = true;
+      recognition.continuous = true;
+
+      let finalTranscript = ''; // 確定した(黒の)認識結果
+      console.log("recoginition result");
+      recognition.onresult = (event) => {
+        let interimTranscript = ''; // 暫定(灰色)の認識結果
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          let transcript = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalTranscript += transcript;
+            output(finalTranscript);
+            console.log(finalTranscript);
+          } else {
+            interimTranscript = transcript;
+          }
+        }
+        resultDiv.innerHTML = finalTranscript + '<i style="color:#ddd;">' + interimTranscript + '</i>';
+        voiceText = finalTranscript;
+        finalTranscript = "";
+      }
+
+      recognition.addEventListener("end",()=>{  //音声認識途切れた時に再接続
+        recognition.start();
+      });
+
+    </script>
+  </body>
+</html>
