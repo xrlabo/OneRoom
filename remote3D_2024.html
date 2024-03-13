@@ -329,7 +329,7 @@
           let audioStream, videoStream; // 音声とビデオのストリーム
 
           
-          navigator.mediaDevices.getUserMedia({ audio: true })
+          navigator.mediaDevices.getUserMedia({ audio: {echoCancellation: false, noiseSuppression: true}})
             .then(function(stream) {
               audioStream = stream; // 音声ストリームを取得
               //ビデオだけmock機能を使う
