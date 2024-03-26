@@ -597,10 +597,10 @@
         return scene;
       } 
       // Create scene.
-		  scene = await createScene();
-		  //scene.then(function (returnedScene) {
-			//  sceneToRender = returnedScene;
-		  //});
+	scene = createScene();
+	scene.then(function (returnedScene) {
+		sceneToRender = returnedScene;
+	});
       
 
       engine.runRenderLoop(function () {
@@ -609,9 +609,9 @@
 			  }
 		  });
 
-      engine.runRenderLoop(function () {
-        scene.render();
-      });
+      //engine.runRenderLoop(function () {
+      //  scene.render();
+      //});
 
       // Handle browser resize.
 		  window.addEventListener('resize', function () {
