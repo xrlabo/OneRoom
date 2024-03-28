@@ -38,9 +38,9 @@
     </div>
     <canvas id="renderCanvas" style="border: 0px; width: 99%; height: 93%; margin: auto; position: absolute; top: 60; bottom: 0;left: 0;right: 0; touch-action: none;"></canvas>
     <script src="sora.js"></script>
-    <script src="./index.js"></script>
-    <script type="text/javascript">
-      
+    <script src="./dummy.js"></script>
+
+    <script type="module">
       const channelId = 'tsukubaRoom_OneRoom';
       const debug = false;
       //const sora = Sora.connection("wss://sora.ikeilabsora.0am.jp/signaling", debug);
@@ -71,7 +71,6 @@
       var transText = "";
       //xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
       var logText ="";
-      let localStream = new MediaStream();
       // canvas DOM 要素を取得する***********************************************
 		  let canvas = document.getElementById('renderCanvas');
 		  // Initialize Babylon.js variables.
@@ -82,7 +81,8 @@
 				  stencil: true
 			  });
       }
-
+      //let localStream ;
+      let localStream = new MediaStream();
       const engine = createDefaultEngine(canvas);
       //********* Create scene and create XR experience. *********************************
 		  const createScene = async function() 
@@ -148,11 +148,12 @@
         log_rectangle.addControl(label2);
 
         var cameraTarget = new BABYLON.Vector3(0.0, 100.0, 0.0);
+        var cameraRadius = 5.0;
         var cam_alpha = -Math.PI/2;
         var cam_beta = Math.PI / 2;
         //var cam_beta = 0;
         var cam_fov = 90 * (Math.PI / 180); 
-			  var camera = new BABYLON.ArcRotateCamera("ArcRotateCamera", cam_alpha, cam_beta, 5.0, cameraTarget, scene);
+			  var camera = new BABYLON.ArcRotateCamera("ArcRotateCamera", cam_alpha, cam_beta, cameraRadius, cameraTarget, scene);
 			  camera.fov = cam_fov;
         camera.attachControl(canvas, true);
         
@@ -168,7 +169,7 @@
         // *** VARIABLES ***
         var streamSpheres = {};
         var cameraData = {};
-        var lastAlpha = 1000;//camera.alpha;
+        //var lastAlpha = 1000;//camera.alpha;
         var shareScreenID = '';
         var screen_position = new BABYLON.Vector3(0.0, cameraTarget.y + 5.0, 10.0);
         var screen_rotation = new BABYLON.Vector3(0.0, 0.0, 0.0);
@@ -176,8 +177,10 @@
         var screen_radio = 1.0;
         var screen_height_radio = 1.0;
         var isDummyMovie = false;
-        var stream_position = new BABYLON.Vector3(0.0, cameraTarget.y + 3.0, 5.0);
-        var stream_rotation = new BABYLON.Vector3(-30.0, 0.0, 180.0);
+	      var remoteCameraRotY = {};
+        var participantCamRadius = 2.5;
+        var participantsCamCenterOffset = 2.0;
+        var participantCamCenter = new BABYLON.Vector3(cameraTarget.x, cameraTarget.y - participantsCamCenterOffset, cameraTarget.z);
 
         // SORA
         const sendrecv1 = sora.sendrecv(channelId, null, options);
@@ -201,7 +204,7 @@
           }
           else if(event.event_type=='connection.destroyed'){
             removeVideo(event);
-            lastAlpha = 1000;//camera.alpha;
+            //lastAlpha = 1000;//camera.alpha;
           }
         });
 
@@ -222,7 +225,7 @@
             } else {
               //if(conn.client_id == 'THISISREMOTE') return;//remote partner
               addStreamVideo(conn.connection_id, stream, conn.client_id);//local partner
-              lastAlpha = 1000;//camera.alpha; to send view angle to LOCAL
+              //lastAlpha = 1000;//camera.alpha; to send view angle to LOCAL
             }
           }
 
@@ -257,16 +260,27 @@
               streamSpheres[stream_id].position.y = cameraTarget.y;
               streamSpheres[stream_id].rotation.y = Math.PI / 2;
             }
-            else if(streamType == 'THISISREMOTE'){
+            else if(streamType == 'THISISREMOTE'){//participants
               var planeOpts = {
-			          height: 7.2, 
-			          width: 9.6, 
-			          sideOrientation: BABYLON.Mesh.FRONTSIDE
+			          height: 1.2, 
+			          width: 1.6, 
+			          sideOrientation: BABYLON.Mesh.FRONT
 	            };
               console.log('create plan remote stream id:', stream_id);
               streamSpheres[stream_id] = BABYLON.MeshBuilder.CreatePlane("plane", planeOpts, scene);
-              streamSpheres[stream_id].position = stream_position;
-              streamSpheres[stream_id].rotation = stream_rotation;
+              //streamSpheres[stream_id].setPivotMatrix(BABYLON.Matrix.Translation(participantCamCenter.x, participantCamCenter.y, participantCamCenter.z));
+              //streamSpheres[stream_id].position =  new BABYLON.Vector3(participantCamCenter.x, participantCamCenter.y, participantCamCenter.z - participantCamRadius);
+              //streamSpheres[stream_id].rotation = new BABYLON.Vector3(0.0, 0.0, 0.0);
+              console.log('my ang', camera.alpha * 180 / Math.PI);
+              var ang_ = camera.alpha;
+              var x_ = participantCamRadius*Math.cos(ang_);
+              var z_ = participantCamRadius*Math.sin(ang_);
+              streamSpheres[stream_id].rotation.x = Math.PI / 6;
+              streamSpheres[stream_id].rotation.y = -ang_ + Math.PI / 2;
+              streamSpheres[stream_id].position.x = x_ + participantCamCenter.x;
+              streamSpheres[stream_id].position.y = participantCamCenter.y;
+              streamSpheres[stream_id].position.z = z_ + participantCamCenter.z;
+
               vScale = -1;
               matAlpha = 1.0;              
             }
@@ -289,13 +303,18 @@
               const remoteVideo = document.createElement('video');
               remoteVideo.id = remoteVideoId;
               //console.log('create child id: ', remoteVideo.id);
-              remoteVideo.style.border = '1px solid red';
+              //remoteVideo.style.border = '1px solid red';
               remoteVideo.autoplay = true;
               remoteVideo.playsinline = true;
               remoteVideo.controls = true;
-              remoteVideo.width = '640';
-              remoteVideo.height = '480';
+              if (stream_id_ == sendrecv1.connectionId){
+                remoteVideo.muted = true;
+              }
+              remoteVideo.width = '320';
+              remoteVideo.height = '240';
               remoteVideo.srcObject = stream;
+              console.log(stream.getVideoTracks()[0].getSettings().aspectRatio);
+              //console.log('width: ', remoteVideo.width)
               remoteVideos.appendChild(remoteVideo);
               streamSpheres[stream_id].material = creatVideoMat(stream_id, document.getElementById(remoteVideoId), vScale);
               streamSpheres[stream_id].material.alpha = matAlpha;//透明度
@@ -333,40 +352,49 @@
             delete streamSpheres[stream_id + streamType];
             delete remoteVideoTracks[stream_id];
           }
+
+          if (remoteCameraRotY[stream_id] != null){
+            delete remoteCameraRotY[stream_id];
+          }
           
         }
 
         document.querySelector('#start-sendrecv1').addEventListener('click', async () => {//入室
-          // sendrecv1
-          let audioStream, videoStream; // 音声とビデオのストリーム
-          navigator.mediaDevices.getUserMedia({ audio: {echoCancellation: false, noiseSuppression: true}})
-            .then(function(stream) {
-              audioStream = stream; // 音声ストリームを取得
-              //ビデオだけmock機能を使う
-              window.getUserMediaMock = new GetUserMediaMock();
-              getUserMediaMock.fallbackMock();
-              return navigator.mediaDevices.getUserMedia({ video: true}); // ビデオストリームを取得するために次のPromiseを返す
-            })
-            .then(function(stream) {
-              videoStream = stream; // ビデオストリームを取得
-              // 音声とビデオのストリームを合成して1つのストリームを作成
+          localStream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: false, noiseSuppression: true}, video: true});
+          localStream.getAudioTracks()[0].enabled = false;
+          await sendrecv1.connect(localStream);
+	        addStreamVideo(sendrecv1.connectionId, localStream, options.clientId);
+		
+          // localStream = new MediaStream();
+          // let audioStream, videoStream; // 音声とビデオのストリーム
+          // navigator.mediaDevices.getUserMedia({ audio: {echoCancellation: false, noiseSuppression: true}})
+          //  .then(function(stream) {
+          //    audioStream = stream; // 音声ストリームを取得
+          //    //ビデオだけmock機能を使う
+          //    window.getUserMediaMock = new GetUserMediaMock();
+          //    getUserMediaMock.fallbackMock();
+          //    return navigator.mediaDevices.getUserMedia({ video: true}); // ビデオストリームを取得するために次のPromiseを返す
+          //  })
+          //  .then(function(stream) {
+          //    videoStream = stream; // ビデオストリームを取得
+          //    // 音声とビデオのストリームを合成して1つのストリームを作成
 
-              audioStream.getAudioTracks().forEach(track => localStream.addTrack(track));
-              videoStream.getVideoTracks().forEach(track => localStream.addTrack(track));
-              // ここで合成したストリームを利用する
-              //console.log(localStream.id);
-              localStream.getAudioTracks()[0].enabled = false;
-              sendrecv1.connect(localStream);
-              addStreamVideo(sendrecv1.connectionId, localStream, options.clientId);
-              if(getUserMediaMock.state.isDummy){  //ダミー映像を流しているなら
-                isDummyMovie = true;
-              }
-            })
-            .catch(function(err) {
-              // エラーハンドリング
-              logText += err;
-            }
-          );         
+          //    audioStream.getAudioTracks().forEach(track => localStream.addTrack(track));
+          //    videoStream.getVideoTracks().forEach(track => localStream.addTrack(track));
+          //    // ここで合成したストリームを利用する
+          //    console.log(localStream.id);
+          //    localStream.getAudioTracks()[0].enabled = false;
+          //    sendrecv1.connect(localStream);
+          //    addStreamVideo(sendrecv1.connectionId, localStream, options.clientId);
+          //    if(getUserMediaMock.state.isDummy){  //ダミー映像を流しているなら
+          //      isDummyMovie = true;
+          //    }
+          //  })
+          //  .catch(function(err) {
+          //    // エラーハンドリング
+          //    logText += err;
+          //  }
+          // );         
             
         });
 
@@ -385,7 +413,6 @@
           for (let id in remoteVideoTracks){
             delete remoteVideoTracks[id];
           }
-          
     
         });
 
@@ -412,7 +439,7 @@
           await sendonly.disconnect();
         });
         
-        //**** MESSAGE ****
+        //**** RECEIVE MESSAGE ****
         sendrecv1.on('message', (event) => {
           //console.log('message: ' + new TextDecoder().decode(event.data));
           var getData = new TextDecoder().decode(event.data).split(',');
@@ -429,73 +456,20 @@
           else if (getData[0] == 'subtitles'){
             transText = getData[1];
           }
+          else{
+            remoteCameraRotY[getData[0]] = parseFloat(getData[1]);
+            //console.log('id: ' + getData[0]);
+            //console.log('alph: ', getData[1] * 180 / Math.PI);
+          }
 
         });
         
         
-        //****************************** LOOP EVERY FRAME *********************************
-        scene.onBeforeRenderObservable.add(() => { // Runs every frame
-          if(sendrecv1.connectionId != null){
-            //console.log(sendrecv1.connectionId);
-            var value = "";
-            if(xrHelper.baseExperience.state == BABYLON.WebXRState.NOT_IN_XR){
-              //console.log("Not IN XR");
-              var angVal = camera.alpha + Math.PI/2;
-              //console.log(angVal);
-              if(!isDummyMovie){
-                value = sendrecv1.connectionId+',' + angVal + "," +"notXR";
-              }
-              else{
-                value = sendrecv1.connectionId+',' + angVal + "," +"XR";  //ダミー映像を流している時はアバター表示するようにデータ送信
-              }
-                
-            }
-            else{
-              console.log("IN XR");
-              //var dir = camera.getDirection(BABYLON.Vector3.Forward());
-              let q = xrHelper.baseExperience.camera.rotationQuaternion;
-              var HMD_ang = 0;
-              HMD_ang = q.y * Math.PI;
-              console.log(HMD_ang);
-              value = sendrecv1.connectionId + "," + HMD_ang + "," +"XR";
-            }
-            //console.log(value);
-            try{
-              sendrecv1.sendMessage('#example', new TextEncoder().encode(value));
-              lastAlpha = camera.alpha;
-            }catch(error){
-
-            }
-
-            
-
-            label.text = transText; //ローカルの翻訳字幕に反映
-            //console.log(transText);
-
-          }
-          //sphere.getAbsolutePosition.z = 0;
-          //console.log(sphere.getAbsolutePosition());
-
-          label2.text = logText;    
-        }); 
-        
-        //*************************************** ANIMATION ******************************************
- 		    scene.registerBeforeRender(function () {//animation            
-            if(shareScreenID != ''){
-                if(screen_change){
-                    streamSpheres[shareScreenID].position = screen_position;
-                    streamSpheres[shareScreenID].rotation.y = screen_rotation.y;
-                    streamSpheres[shareScreenID].scaling.x = screen_radio;
-                    streamSpheres[shareScreenID].scaling.y = (screen_radio * screen_height_radio);
-                    //console.log(streamSpheres[shareScreenID].position);
-                    screen_change = false;
-                }
-            }
-		    });
+      
 		    //**** KEYBOARD ****
         scene.onKeyboardObservable.add((kbInfo) => {
-		    switch (kbInfo.type) {
-			    case BABYLON.KeyboardEventTypes.KEYDOWN:
+		      switch (kbInfo.type) {
+			      case BABYLON.KeyboardEventTypes.KEYDOWN:
                     if(kbInfo.event.key == '+'){
                     //screen_postion.z += 0.2;
                     }
@@ -503,14 +477,14 @@
                     //screen_postion.z -= 0.2;
                     }
                     //console.log("KEY DOWN: ", kbInfo.event.key);
-				    break;
-			    case BABYLON.KeyboardEventTypes.KEYUP:
-				    if(kbInfo.event.key == 'r'){
+				      break;
+			      case BABYLON.KeyboardEventTypes.KEYUP:
+				      if(kbInfo.event.key == 'r'){
                         resetCam();
                     }
                     //console.log("KEY UP: ", kbInfo.event.code);
-				    break;
-		        }
+				      break;
+		      }
 	      });
 
         //**** GUI ****
@@ -541,77 +515,125 @@
         });
         panel.addControl(slider);    
 
-				///xxxxxxxxxx HMD xxxxxxxxxx
-        
-				xrHelper = await scene.createDefaultXRExperienceAsync({
+				///xxxxxxxxxx XR or NOT detection xxxxxxxxxx
+        try{
+				  const xrHelper = await scene.createDefaultXRExperienceAsync();
+               
 
-        });
-        
-        if (!xrHelper.baseExperience) {
-					// XR support is unavailable.
-					console.log('WebXR support is unavailable');
-				}
-        else {
-          //xrHelper.teleportation.detach();
-          xrHelper.baseExperience.onStateChangedObservable.add((state) => {
-            scene.onBeforeCameraRenderObservable.add((xr_camera) => {//loop 
-              xr_camera.position.y = 100;
-              ;//
+          if (!xrHelper.baseExperience) {
+            // XR support is unavailable.
+            console.log('WebXR support is unavailable');
+
+
+          }
+          else {
+            //xrHelper.teleportation.detach();
+            xrHelper.baseExperience.onStateChangedObservable.add((state) => {
+              scene.onBeforeCameraRenderObservable.add((xr_camera) => {//loop 
+                xr_camera.position.y = 100;
+                ;//
+              });
+              
+
             });
-            
 
-          });
+          }
 
-				}
+          //カメラの位置に合わせてテキスト位置移動
+          if(xrHelper.baseExperience.state == BABYLON.WebXRState.NOT_IN_XR){  //XRに入っているかどうか
+            transTextSphere.position.y  = 100;   //親オブジェクトの位置を変更することでテキストの位置も変更可能
+            logTextSphere.position.y  = 98;   
+          }
+          else{
+            //sphere.position.y  = -100;
+          }
+      
+        //****************************** LOOP EVERY FRAME*********************************
+        scene.onBeforeRenderObservable.add(() => { // Runs every frame
+          if(sendrecv1.connectionId != null){
+            //console.log(sendrecv1.connectionId);
+            var value = "";
+            if(xrHelper.baseExperience.state == BABYLON.WebXRState.NOT_IN_XR){
+              //console.log("Not IN XR");
+              var angVal = camera.alpha + Math.PI/2;
+              remoteCameraRotY[sendrecv1.connectionId] = angVal;
 
+              if(!isDummyMovie){
+                value = sendrecv1.connectionId+',' + angVal + "," +"notXR";
+              }
+              else{
+                value = sendrecv1.connectionId+',' + angVal + "," +"XR";  //ダミー映像を流している時はアバター表示するようにデータ送信
+              }
+                
+            }
+            else{
+              console.log("IN XR");
+              //var dir = camera.getDirection(BABYLON.Vector3.Forward());
+              let q = xrHelper.baseExperience.camera.rotationQuaternion;
+              var HMD_ang = 0;
+              HMD_ang = q.y * Math.PI;
+              console.log(HMD_ang);
+              value = sendrecv1.connectionId + "," + HMD_ang + "," +"XR";
+            }
+            try{
+              sendrecv1.sendMessage('#example', new TextEncoder().encode(value));
+            }catch(error){
 
-        
-        //カメラの位置に合わせてテキスト位置移動
-        if(xrHelper.baseExperience.state == BABYLON.WebXRState.NOT_IN_XR){  //XRに入っているかどうか
-          transTextSphere.position.y  = 100;   //親オブジェクトの位置を変更することでテキストの位置も変更可能
-          logTextSphere.position.y  = 98;   
-        }
-        else{
-          //sphere.position.y  = -100;
-        }
-        console.log(transTextSphere.position);
+            }
+            label.text = transText; //ローカルの翻訳字幕に反映
+          }
+          label2.text = logText;    
+        }); 
 
-         //途中省略
-        const tmpRay = new BABYLON.Ray();
-        tmpRay.origin = new BABYLON.Vector3();
-        tmpRay.direction = new BABYLON.Vector3();
-        tmpRay.length = 100000;// rayが届く範囲を3に制限。
-        var hit;
-        var tmpMesh;
-       
-      scene.onBeforeRenderObservable.add(() => { // Runs every frame
-        if(xrHelper.baseExperience.state == BABYLON.WebXRState.NOT_IN_XR){
-          //console.log("Not IN XR");
-        }
-        else{
-          //console.log("IN XR");
-        }
-        
-      });
+        //*************************************** ANIMATION******************************************
+ 		    scene.registerBeforeRender(function () {//animation            
+          if(shareScreenID != ''){
+            if(screen_change){
+              streamSpheres[shareScreenID].position = screen_position;
+              streamSpheres[shareScreenID].rotation.y = screen_rotation.y;
+              streamSpheres[shareScreenID].scaling.x = screen_radio;
+              streamSpheres[shareScreenID].scaling.y = (screen_radio * screen_height_radio);
+              //console.log(streamSpheres[shareScreenID].position);
+              screen_change = false;
+            }
+          }
+          
+          for (let key in remoteCameraRotY) {//rotate remote camera
+            if (streamSpheres[key + options.clientId]){
+              var ang_ = remoteCameraRotY[key] - Math.PI / 2;
+              var x_ = participantCamRadius*Math.cos(ang_);
+              var z_ = participantCamRadius*Math.sin(ang_);
+              streamSpheres[key + options.clientId].rotation.x = Math.PI / 6;
+              streamSpheres[key + options.clientId].rotation.y = -ang_ + Math.PI / 2;
+              streamSpheres[key + options.clientId].position.x = x_ + participantCamCenter.x;
+              streamSpheres[key + options.clientId].position.z = z_ + participantCamCenter.z;
+            }
+          }
+		    });
+          
+      }
+      catch(e){
+        console.log(e);
+      } 
 
         return scene;
       } 
       // Create scene.
-	scene = createScene();
-	scene.then(function (returnedScene) {
-		sceneToRender = returnedScene;
-	});
-      
+		  // scene = createScene();
+		  // scene.then(function (returnedScene) {
+			//   sceneToRender = returnedScene;
+		  // });
+      // engine.runRenderLoop(function () {
+			//   if (sceneToRender) {
+			// 	  sceneToRender.render();
+			//   }
+		  // });
 
+      const scene = await createScene();
+      //scene.debugLayer.show();
       engine.runRenderLoop(function () {
-			  if (sceneToRender) {
-				  sceneToRender.render();
-			  }
-		  });
-
-      //engine.runRenderLoop(function () {
-      //  scene.render();
-      //});
+        scene.render();
+      });
 
       // Handle browser resize.
 		  window.addEventListener('resize', function () {

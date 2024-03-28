@@ -577,7 +577,7 @@
         sendrecv1.on('message', (event) => {
           //console.log("message received");
           var getData = new TextDecoder().decode(event.data).split(',');
-          console.log(getData);
+          //console.log(getData);
           //console.log('id: ' + getData[0]);
           //var ang = getData[1] + 1.57;
           //console.log('alph: ' + getData[1]);
@@ -588,7 +588,7 @@
           }
           */
           if(streamPlane[getData[0]]!=null){
-            streamPlane[getData[0]].rotation.y = getData[1];// + Math.PI/2;
+           streamPlane[getData[0]].rotation.y = getData[1];// + Math.PI/2;
           }
           
           remoteCameraRotY[getData[0]] = getData[1];
@@ -609,6 +609,7 @@
                     streamAvaterMeshes[key][i].isVisible = false;
                     if(streamPlane[key]!=null){
                       streamPlane[key].isVisible = true;
+                      //streamPlane[key].rotation.y = remoteCameraRotY[key];
                     }
                     
                   }
